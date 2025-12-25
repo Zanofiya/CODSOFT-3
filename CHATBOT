@@ -1,0 +1,618 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { Send, Bot, User, Trash2, Settings, MessageSquare, Brain, Zap } from 'lucide-react';
+
+const RuleBasedChatbot = () => {
+  const [messages, setMessages] = useState([
+    { 
+      id: 1, 
+      text: "Hello! I'm a rule-based chatbot. I can help you with greetings, questions, weather info, jokes, and more. Try asking me something!", 
+      sender: 'bot',
+      timestamp: new Date()
+    }
+  ]);
+  const [input, setInput] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const [userName, setUserName] = useState('');
+  const [context, setContext] = useState({});
+  const [matchedPattern, setMatchedPattern] = useState('');
+  const [showStats, setShowStats] = useState(false);
+  const [stats, setStats] = useState({
+    totalMessages: 0,
+    patterns: {},
+    conversationLength: 0
+  });
+  
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  // Pattern matching rules with priority
+  const patterns = [
+    // Greetings
+    {
+      patterns: [/^(hi|hello|hey|greetings|howdy|sup|yo)\b/i],
+      responses: [
+        "Hello! How can I assist you today?",
+        "Hi there! What can I do for you?",
+        "Hey! Great to see you. What's on your mind?",
+        "Greetings! How may I help you?"
+      ],
+      category: 'greeting',
+      priority: 1
+    },
+    
+    // Name introduction
+    {
+      patterns: [/my name is (\w+)/i, /i'm (\w+)/i, /i am (\w+)/i, /call me (\w+)/i],
+      responses: (matches) => {
+        const name = matches[1];
+        setUserName(name);
+        return `Nice to meet you, ${name}! I'll remember that.`;
+      },
+      category: 'introduction',
+      priority: 1
+    },
+    
+    // Name recall
+    {
+      patterns: [/what('s| is) my name/i, /do you (know|remember) my name/i, /who am i/i],
+      responses: () => {
+        return userName 
+          ? `Your name is ${userName}!` 
+          : "I don't know your name yet. You can tell me by saying 'My name is...'";
+      },
+      category: 'memory',
+      priority: 1
+    },
+    
+    // How are you
+    {
+      patterns: [/how are you/i, /how('re| are) you doing/i, /what('s| is) up/i, /how('s| is) it going/i],
+      responses: [
+        "I'm functioning perfectly, thank you for asking! How are you?",
+        "I'm doing great! All systems operational. How about you?",
+        "I'm excellent! Thanks for asking. What brings you here today?",
+        "Doing well! How can I help you?"
+      ],
+      category: 'wellbeing',
+      priority: 1
+    },
+    
+    // User feeling
+    {
+      patterns: [/i('m| am) (sad|unhappy|depressed|down)/i],
+      responses: [
+        "I'm sorry to hear that. Remember, it's okay to feel down sometimes. Is there anything I can help you with?",
+        "That's tough. Would you like to talk about it or shall I try to cheer you up with a joke?"
+      ],
+      category: 'emotion',
+      priority: 1
+    },
+    
+    {
+      patterns: [/i('m| am) (happy|great|good|excited|fantastic)/i],
+      responses: [
+        "That's wonderful to hear! I'm glad you're feeling good!",
+        "Awesome! Your positive energy is contagious!",
+        "That's great! What's making you so happy?"
+      ],
+      category: 'emotion',
+      priority: 1
+    },
+    
+    // Weather
+    {
+      patterns: [/weather|temperature|forecast|rain|sunny|cold|hot/i],
+      responses: [
+        "I don't have real-time weather data, but I can tell you it's always sunny in the digital world! 🌞",
+        "I'm not connected to weather services, but I hope it's nice where you are!",
+        "Weather inquiries require internet access, which I don't have. But I hope you have great weather!"
+      ],
+      category: 'weather',
+      priority: 2
+    },
+    
+    // Time
+    {
+      patterns: [/what time|current time|what('s| is) the time/i],
+      responses: () => {
+        const now = new Date();
+        return `The current time is ${now.toLocaleTimeString()}.`;
+      },
+      category: 'time',
+      priority: 1
+    },
+    
+    // Date
+    {
+      patterns: [/what('s| is) (the )?date|today('s| is) date|what day/i],
+      responses: () => {
+        const now = new Date();
+        return `Today is ${now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`;
+      },
+      category: 'date',
+      priority: 1
+    },
+    
+    // Jokes
+    {
+      patterns: [/tell me a joke|joke|make me laugh|something funny/i],
+      responses: [
+        "Why don't scientists trust atoms? Because they make up everything! 😄",
+        "What do you call a bear with no teeth? A gummy bear! 🐻",
+        "Why did the scarecrow win an award? He was outstanding in his field! 🌾",
+        "What do you call a fake noodle? An impasta! 🍝",
+        "Why don't eggs tell jokes? They'd crack up! 🥚",
+        "What did the ocean say to the beach? Nothing, it just waved! 🌊"
+      ],
+      category: 'entertainment',
+      priority: 2
+    },
+    
+    // Math
+    {
+      patterns: [/what is (\d+)\s*[\+\-\*\/]\s*(\d+)/i, /calculate (\d+)\s*[\+\-\*\/]\s*(\d+)/i],
+      responses: (matches) => {
+        const fullMatch = matches[0];
+        try {
+          const result = eval(fullMatch.replace(/what is |calculate /i, ''));
+          return `The answer is ${result}!`;
+        } catch {
+          return "I couldn't calculate that. Please use simple arithmetic like '5 + 3'.";
+        }
+      },
+      category: 'calculation',
+      priority: 1
+    },
+    
+    // Capabilities
+    {
+      patterns: [/what can you do|your capabilities|help|commands|features/i],
+      responses: [
+        `I can help you with:
+        
+• Greetings and casual conversation
+• Remember your name
+• Tell jokes
+• Answer the time and date
+• Simple math calculations
+• Provide information about various topics
+• Respond to how you're feeling
+
+Try asking me something!`
+      ],
+      category: 'help',
+      priority: 1
+    },
+    
+    // Who are you
+    {
+      patterns: [/who are you|what are you|your name|about you/i],
+      responses: [
+        "I'm a rule-based chatbot built with pattern matching! I use regular expressions to understand your messages.",
+        "I'm an AI chatbot that uses if-else logic and pattern matching to have conversations. Pretty cool, right?",
+        "I'm a demonstration of rule-based NLP! I match your input against predefined patterns to generate responses."
+      ],
+      category: 'identity',
+      priority: 1
+    },
+    
+    // Thanks
+    {
+      patterns: [/thank you|thanks|thx|appreciate/i],
+      responses: [
+        "You're welcome! Happy to help! 😊",
+        "No problem at all! Anything else I can help with?",
+        "My pleasure! Feel free to ask me anything else.",
+        "You're very welcome! That's what I'm here for!"
+      ],
+      category: 'gratitude',
+      priority: 1
+    },
+    
+    // Goodbye
+    {
+      patterns: [/bye|goodbye|see you|farewell|exit|quit/i],
+      responses: [
+        "Goodbye! It was nice chatting with you! 👋",
+        "See you later! Have a great day! 🌟",
+        "Farewell! Come back anytime you want to chat!",
+        "Take care! Hope to see you again soon! 😊"
+      ],
+      category: 'farewell',
+      priority: 1
+    },
+    
+    // Yes/No
+    {
+      patterns: [/^yes$|^yeah$|^yep$|^sure$|^okay$|^ok$/i],
+      responses: [
+        "Great! What would you like to know?",
+        "Awesome! How can I help you?",
+        "Perfect! What's next?"
+      ],
+      category: 'affirmation',
+      priority: 2
+    },
+    
+    {
+      patterns: [/^no$|^nope$|^nah$/i],
+      responses: [
+        "Alright! Let me know if you need anything else.",
+        "No problem! I'm here if you change your mind.",
+        "Okay! Feel free to ask me anything else."
+      ],
+      category: 'negation',
+      priority: 2
+    },
+    
+    // Questions
+    {
+      patterns: [/why|how|what|when|where|which|who/i],
+      responses: [
+        "That's an interesting question! I'm a simple rule-based bot, so I might not have all the answers, but I'll try my best!",
+        "Good question! While I don't have access to all information, I can help with basic queries.",
+        "I appreciate your curiosity! My knowledge is limited to my predefined patterns, but ask away!"
+      ],
+      category: 'question',
+      priority: 3
+    },
+    
+    // Default fallback
+    {
+      patterns: [/.+/],
+      responses: [
+        "I'm not sure I understood that. Could you rephrase it?",
+        "Interesting! I don't have a specific response for that. Try asking me about the time, a joke, or what I can do!",
+        "I'm still learning! Could you ask that in a different way?",
+        "Hmm, I didn't quite catch that. You can ask me for help to see what I can do!"
+      ],
+      category: 'fallback',
+      priority: 10
+    }
+  ];
+
+  const findMatchingPattern = (userInput) => {
+    const normalizedInput = userInput.trim();
+    
+    // Sort patterns by priority
+    const sortedPatterns = [...patterns].sort((a, b) => a.priority - b.priority);
+    
+    for (let rule of sortedPatterns) {
+      for (let pattern of rule.patterns) {
+        const match = normalizedInput.match(pattern);
+        if (match) {
+          return { rule, match };
+        }
+      }
+    }
+    
+    return null;
+  };
+
+  const generateResponse = (rule, match) => {
+    if (typeof rule.responses === 'function') {
+      return rule.responses(match);
+    } else {
+      const randomIndex = Math.floor(Math.random() * rule.responses.length);
+      return rule.responses[randomIndex];
+    }
+  };
+
+  const updateStats = (category) => {
+    setStats(prev => ({
+      totalMessages: prev.totalMessages + 1,
+      patterns: {
+        ...prev.patterns,
+        [category]: (prev.patterns[category] || 0) + 1
+      },
+      conversationLength: messages.length + 1
+    }));
+  };
+
+  const handleSend = () => {
+    if (input.trim() === '') return;
+
+    const userMessage = {
+      id: Date.now(),
+      text: input,
+      sender: 'user',
+      timestamp: new Date()
+    };
+
+    setMessages([...messages, userMessage]);
+    setInput('');
+    setIsTyping(true);
+
+    setTimeout(() => {
+      const matchResult = findMatchingPattern(input);
+      let botResponse = "I'm not sure how to respond to that.";
+      let category = 'unknown';
+
+      if (matchResult) {
+        botResponse = generateResponse(matchResult.rule, matchResult.match);
+        category = matchResult.rule.category;
+        setMatchedPattern(matchResult.rule.patterns[0].toString());
+      }
+
+      updateStats(category);
+
+      const botMessage = {
+        id: Date.now() + 1,
+        text: botResponse,
+        sender: 'bot',
+        timestamp: new Date(),
+        category: category
+      };
+
+      setMessages(prev => [...prev, botMessage]);
+      setIsTyping(false);
+    }, 1000 + Math.random() * 500);
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const clearChat = () => {
+    setMessages([
+      { 
+        id: 1, 
+        text: "Chat cleared! How can I help you?", 
+        sender: 'bot',
+        timestamp: new Date()
+      }
+    ]);
+    setStats({
+      totalMessages: 0,
+      patterns: {},
+      conversationLength: 0
+    });
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 text-white p-4">
+      <div className="max-w-7xl mx-auto">
+        <div className="text-center mb-6">
+          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-blue-400 to-pink-400 bg-clip-text text-transparent">
+            Rule-Based Chatbot
+          </h1>
+          <p className="text-gray-300">Pattern Matching & Natural Language Processing</p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          {/* Stats Panel */}
+          <div className="lg:col-span-1 space-y-4">
+            <div className="bg-white/10 backdrop-blur-lg rounded-lg p-4 border border-white/20">
+              <h2 className="text-lg font-bold mb-3 flex items-center">
+                <Brain className="mr-2" size={20} />
+                Analytics
+              </h2>
+              
+              <div className="space-y-3 text-sm">
+                <div className="bg-white/5 p-3 rounded">
+                  <div className="text-gray-400 text-xs">Total Messages</div>
+                  <div className="text-2xl font-bold">{stats.totalMessages}</div>
+                </div>
+
+                <div className="bg-white/5 p-3 rounded">
+                  <div className="text-gray-400 text-xs">Conversation Length</div>
+                  <div className="text-2xl font-bold">{messages.length}</div>
+                </div>
+
+                <div className="bg-white/5 p-3 rounded">
+                  <div className="text-gray-400 text-xs mb-2">Pattern Usage</div>
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {Object.entries(stats.patterns).map(([category, count]) => (
+                      <div key={category} className="flex justify-between text-xs">
+                        <span className="capitalize">{category}</span>
+                        <span className="font-bold">{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {userName && (
+                  <div className="bg-green-500/20 p-3 rounded border border-green-500/30">
+                    <div className="text-gray-300 text-xs">User Name</div>
+                    <div className="font-bold">{userName}</div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={() => setShowStats(!showStats)}
+                className="w-full mt-4 p-2 bg-purple-500/30 hover:bg-purple-500/50 rounded transition text-sm"
+              >
+                {showStats ? 'Hide' : 'Show'} Details
+              </button>
+            </div>
+
+            {showStats && (
+              <div className="bg-white/10 backdrop-blur-lg rounded-lg p-4 border border-white/20">
+                <h2 className="text-lg font-bold mb-3 flex items-center">
+                  <Zap className="mr-2" size={20} />
+                  How It Works
+                </h2>
+                
+                <div className="text-xs space-y-2 text-gray-300">
+                  <p><strong>1. Input Processing:</strong> Your message is normalized and cleaned</p>
+                  <p><strong>2. Pattern Matching:</strong> Regex patterns are tested against your input</p>
+                  <p><strong>3. Priority Sorting:</strong> Best match is selected based on priority</p>
+                  <p><strong>4. Response Generation:</strong> Appropriate response is returned</p>
+                </div>
+
+                {matchedPattern && (
+                  <div className="mt-3 p-2 bg-blue-500/20 rounded text-xs">
+                    <div className="font-bold mb-1">Last Pattern:</div>
+                    <code className="break-all">{matchedPattern}</code>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="bg-white/10 backdrop-blur-lg rounded-lg p-4 border border-white/20">
+              <h2 className="text-lg font-bold mb-3 flex items-center">
+                <MessageSquare className="mr-2" size={20} />
+                Try These
+              </h2>
+              
+              <div className="space-y-2 text-xs">
+                {[
+                  "Hello!",
+                  "My name is Alex",
+                  "Tell me a joke",
+                  "What time is it?",
+                  "What can you do?",
+                  "How are you?"
+                ].map((example, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setInput(example)}
+                    className="w-full p-2 bg-white/5 hover:bg-white/10 rounded transition text-left"
+                  >
+                    "{example}"
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Chat Area */}
+          <div className="lg:col-span-3">
+            <div className="bg-white/10 backdrop-blur-lg rounded-lg border border-white/20 flex flex-col h-[600px]">
+              {/* Header */}
+              <div className="p-4 border-b border-white/20 flex justify-between items-center">
+                <div className="flex items-center">
+                  <Bot className="mr-2 text-blue-400" size={24} />
+                  <div>
+                    <h2 className="font-bold">Chatbot Assistant</h2>
+                    <p className="text-xs text-gray-400">Online • Pattern-based AI</p>
+                  </div>
+                </div>
+                
+                <button
+                  onClick={clearChat}
+                  className="p-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg transition"
+                  title="Clear chat"
+                >
+                  <Trash2 size={20} />
+                </button>
+              </div>
+
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div className={`flex items-start max-w-[80%] ${message.sender === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                        message.sender === 'user' ? 'bg-blue-500 ml-2' : 'bg-purple-500 mr-2'
+                      }`}>
+                        {message.sender === 'user' ? <User size={18} /> : <Bot size={18} />}
+                      </div>
+                      
+                      <div>
+                        <div className={`rounded-2xl p-3 ${
+                          message.sender === 'user' 
+                            ? 'bg-blue-500 text-white' 
+                            : 'bg-white/10 border border-white/20'
+                        }`}>
+                          <p className="whitespace-pre-wrap">{message.text}</p>
+                        </div>
+                        
+                        <div className={`text-xs text-gray-400 mt-1 ${message.sender === 'user' ? 'text-right' : 'text-left'}`}>
+                          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {message.category && (
+                            <span className="ml-2 text-purple-400">• {message.category}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {isTyping && (
+                  <div className="flex justify-start">
+                    <div className="flex items-start max-w-[80%]">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-purple-500 mr-2">
+                        <Bot size={18} />
+                      </div>
+                      <div className="bg-white/10 border border-white/20 rounded-2xl p-3">
+                        <div className="flex space-x-2">
+                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Input */}
+              <div className="p-4 border-t border-white/20">
+                <div className="flex space-x-2">
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    placeholder="Type your message..."
+                    className="flex-1 bg-white/5 border border-white/20 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-400 transition"
+                  />
+                  <button
+                    onClick={handleSend}
+                    disabled={input.trim() === ''}
+                    className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-600 disabled:cursor-not-allowed p-3 rounded-lg transition"
+                  >
+                    <Send size={20} />
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-2">
+                  Press Enter to send • {patterns.length} patterns loaded
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Features Section */}
+        <div className="mt-6 bg-white/10 backdrop-blur-lg rounded-lg p-6 border border-white/20">
+          <h2 className="text-xl font-bold mb-4">Pattern Matching Techniques</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div className="bg-white/5 p-4 rounded-lg">
+              <h3 className="font-bold text-blue-400 mb-2">Regular Expressions</h3>
+              <p className="text-gray-300">Uses regex patterns to match user input flexibly, handling variations in phrasing and spelling.</p>
+            </div>
+            <div className="bg-white/5 p-4 rounded-lg">
+              <h3 className="font-bold text-purple-400 mb-2">Priority System</h3>
+              <p className="text-gray-300">Patterns are ranked by priority to ensure specific matches override generic fallbacks.</p>
+            </div>
+            <div className="bg-white/5 p-4 rounded-lg">
+              <h3 className="font-bold text-pink-400 mb-2">Context Awareness</h3>
+              <p className="text-gray-300">Remembers user information like names and maintains conversation context throughout the session.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default RuleBasedChatbot;
